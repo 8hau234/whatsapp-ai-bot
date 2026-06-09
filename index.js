@@ -110,11 +110,11 @@ client.on('ready', () => {
 // 3. Conversational Memory Storage
 // ==========================================
 const chatSessions = {};
-const botStartTime = Math.floor(Date.now() / 1000);
 
 client.on('message', async msg => {
-    // Ignore historical messages loaded during startup to prevent Groq API rate limits
-    if (msg.timestamp < botStartTime) return;
+    // Completely ignore any messages that arrive before the bot is fully logged in!
+    // This perfectly prevents the bot from reading your chat history without relying on buggy server clocks.
+    if (!isClientReady) return;
 
     const contact = await msg.getContact();
     const sender = contact.number; 
