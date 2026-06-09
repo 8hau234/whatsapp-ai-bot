@@ -8,10 +8,27 @@ const express = require('express');
 const qrcodeLib = require('qrcode');
 
 // ==========================================
-// 0. Web Server (For Render QR Code)
+// 0. Web Server (For Render QR Code & Logs)
 // ==========================================
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Capture logs so we can display them on the web page
+const recentLogs = [];
+const originalLog = console.log;
+const originalError = console.error;
+
+console.log = function(...args) {
+    recentLogs.push('[' + new Date().toLocaleTimeString() + '] ' + args.join(' '));
+    if (recentLogs.length > 50) recentLogs.shift();
+    originalLog.apply(console, args);
+};
+
+console.error = function(...args) {
+    recentLogs.push('[' + new Date().toLocaleTimeString() + '] ❌ ERROR: ' + args.join(' '));
+    if (recentLogs.length > 50) recentLogs.shift();
+    originalError.apply(console, args);
+};
 
 let latestQrImage = null;
 let isClientReady = false;
@@ -32,6 +49,11 @@ app.get('/', (req, res) => {
     } else {
         res.send('<h1 style="font-family:sans-serif; text-align:center; margin-top:50px;">⏳ Generating QR Code... Please wait and refresh in 10 seconds.</h1>');
     }
+});
+
+// Secret debugging page!
+app.get('/logs', (req, res) => {
+    res.send('<h2>Bot Logs:</h2><pre style="background:#222; color:#0f0; padding:20px; font-size:1.2rem; border-radius:10px;">' + recentLogs.join('<br>') + '</pre>');
 });
 
 app.listen(PORT, () => {
