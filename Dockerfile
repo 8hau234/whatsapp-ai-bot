@@ -1,4 +1,4 @@
-FROM node:18
+FROM node:22
 
 # Install Google Chrome Stable and fonts
 # Note: this installs the necessary libs to make the bundled version of Chromium that Puppeteer
