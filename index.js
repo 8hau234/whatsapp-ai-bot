@@ -77,7 +77,16 @@ async function appendToSheet(date, sender, messageContent, name, quantity, produ
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-gpu'
+        ]
     }
 });
 
@@ -153,7 +162,7 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
 
         const chatCompletion = await groq.chat.completions.create({
             messages: messages,
-            model: 'llama3-8b-8192',
+            model: 'llama-3.1-8b-instant',
             temperature: 0.2,
             response_format: { type: "json_object" } 
         });
