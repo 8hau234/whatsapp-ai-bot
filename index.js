@@ -134,9 +134,10 @@ client.on('ready', () => {
 const chatSessions = {};
 
 client.on('message', async msg => {
-    // Completely ignore any messages that arrive before the bot is fully logged in!
-    // This perfectly prevents the bot from reading your chat history without relying on buggy server clocks.
-    if (!isClientReady) return;
+    // Ignore messages that are older than 5 minutes.
+    // This prevents the bot from reading deep history, but doesn't rely on the buggy 'ready' event!
+    const messageAge = (Date.now() / 1000) - msg.timestamp;
+    if (messageAge > 300) return;
 
     const contact = await msg.getContact();
     const sender = contact.number; 
