@@ -210,19 +210,7 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
 
     } catch (err) {
         console.error('   -> Groq AI Error:', err.message);
-        
-        if (text.includes(',')) {
-            const parts = text.split(',');
-            if (parts.length >= 2) {
-                const fallbackName = parts[0].trim();
-                const rest = parts.slice(1).join(',').trim(); 
-                const match = rest.match(/^(\d+)\s*(.+)$/);
-                if (match) {
-                    await appendToSheet(date, senderName, text, fallbackName, match[1], match[2].trim());
-                    await msg.reply(`✅ Order automatically recorded via fallback system.`);
-                }
-            }
-        }
+        await msg.reply(`⚠️ Oops! The AI encountered an error: ${err.message}\n\nPlease show this error to your developer!`);
     }
 });
 
