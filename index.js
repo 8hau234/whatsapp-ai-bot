@@ -112,8 +112,12 @@ client.on('ready', () => {
 // 3. Conversational Memory Storage
 // ==========================================
 const chatSessions = {};
+const botStartTime = Math.floor(Date.now() / 1000);
 
 client.on('message', async msg => {
+    // Ignore historical messages loaded during startup to prevent Groq API rate limits
+    if (msg.timestamp < botStartTime) return;
+
     const contact = await msg.getContact();
     const sender = contact.number; 
     const senderName = contact.pushname || contact.name || sender;
