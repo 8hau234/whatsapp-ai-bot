@@ -4,6 +4,39 @@ const qrcode = require('qrcode-terminal');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const Groq = require('groq-sdk');
+const express = require('express');
+const qrcodeLib = require('qrcode');
+
+// ==========================================
+// 0. Web Server (For Render QR Code)
+// ==========================================
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+let latestQrImage = null;
+let isClientReady = false;
+
+app.get('/', (req, res) => {
+    if (isClientReady) {
+        res.send('<h1 style="font-family:sans-serif; text-align:center; margin-top:50px; color:green;">✅ WhatsApp is Connected! The bot is running perfectly.</h1>');
+    } else if (latestQrImage) {
+        res.send(`
+            <html>
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background-color:#f0f2f5;">
+                    <h2>Scan this QR Code with WhatsApp</h2>
+                    <img src="${latestQrImage}" alt="QR Code" style="width: 350px; height: 350px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 15px solid white;"/>
+                    <p style="color: #666; margin-top: 20px; font-size: 1.2rem;">QR code expires every 30 seconds. <b>Refresh this page</b> to get a fresh one if it fails.</p>
+                </body>
+            </html>
+        `);
+    } else {
+        res.send('<h1 style="font-family:sans-serif; text-align:center; margin-top:50px;">⏳ Generating QR Code... Please wait and refresh in 10 seconds.</h1>');
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`🌐 Web Server running on port ${PORT}`);
+});
 
 // Initialize Groq AI
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -48,42 +81,46 @@ const client = new Client({
     }
 });
 
-client.on('qr', (qr) => {
-    console.log('📱 Scan this QR code with your WhatsApp app to log in:');
-    qrcode.generate(qr, { small: true });
+client.on('qr', async (qr) => {
+    console.log('📱 QR Code Generated! Go to your Render Web Service URL to see the image!');
+    qrcode.generate(qr, { small: true }); // Fallback for terminal
+    
+    // Generate image for the website
+    try {
+        latestQrImage = await qrcodeLib.toDataURL(qr);
+    } catch (err) {
+        console.error('❌ Failed to generate QR image for web:', err);
+    }
 });
 
 client.on('ready', () => {
+    isClientReady = true;
+    latestQrImage = null; // Clear image from memory
     console.log('✅ WhatsApp Client is ready and listening for messages!');
 });
 
 // ==========================================
 // 3. Conversational Memory Storage
 // ==========================================
-// This object stores the chat history for each user based on their phone number.
 const chatSessions = {};
 
 client.on('message', async msg => {
     const contact = await msg.getContact();
-    const sender = contact.number; // Unique ID for memory
+    const sender = contact.number; 
     const senderName = contact.pushname || contact.name || sender;
     const date = new Date(msg.timestamp * 1000).toLocaleString();
     const text = msg.body;
 
     console.log(`📨 Received message from ${senderName}: ${text}`);
 
-    // Ignore empty messages
     if (!text) return;
 
-    // Initialize memory for new users
     if (!chatSessions[sender]) {
         chatSessions[sender] = [];
     }
 
-    // Add user's message to their history
     chatSessions[sender].push({ role: 'user', content: text });
 
-    // Keep history from getting too long (keep last 10 messages max)
     if (chatSessions[sender].length > 10) {
         chatSessions[sender] = chatSessions[sender].slice(-10);
     }
@@ -91,7 +128,6 @@ client.on('message', async msg => {
     try {
         console.log(`   -> Asking Groq AI to analyze the conversation...`);
         
-        // System prompt instructs the AI on exactly how to behave
         const systemPrompt = `
 You are a helpful order-taking assistant on WhatsApp. Your goal is to collect 3 pieces of information:
 1. Customer's Name
@@ -115,12 +151,11 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
             ...chatSessions[sender]
         ];
 
-        // Call Groq API using a fast model
         const chatCompletion = await groq.chat.completions.create({
             messages: messages,
             model: 'llama3-8b-8192',
             temperature: 0.2,
-            response_format: { type: "json_object" } // Enforces JSON output
+            response_format: { type: "json_object" } 
         });
 
         const responseText = chatCompletion.choices[0]?.message?.content || '{}';
@@ -129,25 +164,20 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
         console.log(`   -> Groq Status: ${data.status}`);
 
         if (data.status === 'asking') {
-            // Reply to the user and save the assistant's reply to memory
             await msg.reply(data.reply);
             chatSessions[sender].push({ role: 'assistant', content: data.reply });
             console.log(`   -> Sent follow-up question to ${senderName}`);
 
         } else if (data.status === 'complete') {
-            // We have all details! Log to Sheets and reply.
             await appendToSheet(date, senderName, text, data.name, data.quantity, data.product);
             await msg.reply(`✅ ${data.reply}`);
             console.log(`   -> Sent confirmation and cleared memory for ${senderName}`);
-            
-            // Clear memory so they can start a fresh order later
             delete chatSessions[sender];
         }
 
     } catch (err) {
         console.error('   -> Groq AI Error:', err.message);
         
-        // Very basic fallback if AI fails entirely
         if (text.includes(',')) {
             const parts = text.split(',');
             if (parts.length >= 2) {
@@ -163,5 +193,4 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
     }
 });
 
-// Start the client
 client.initialize();
