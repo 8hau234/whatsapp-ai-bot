@@ -35,7 +35,13 @@ let isClientReady = false;
 
 app.get('/', (req, res) => {
     if (isClientReady) {
-        res.send('<h1 style="font-family:sans-serif; text-align:center; margin-top:50px; color:green;">✅ WhatsApp is Connected! The bot is running perfectly.</h1>');
+        res.send(`
+            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                <h1 style="color:green;">✅ WhatsApp is Connected! The bot is running perfectly.</h1>
+                <br><br>
+                <a href="/logs" style="padding: 15px 30px; background-color: #333; color: #0f0; text-decoration: none; border-radius: 5px; font-size: 1.5rem; font-weight: bold;">Click Here to View Bot Logs</a>
+            </div>
+        `);
     } else if (latestQrImage) {
         res.send(`
             <html>
@@ -43,6 +49,8 @@ app.get('/', (req, res) => {
                     <h2>Scan this QR Code with WhatsApp</h2>
                     <img src="${latestQrImage}" alt="QR Code" style="width: 350px; height: 350px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 15px solid white;"/>
                     <p style="color: #666; margin-top: 20px; font-size: 1.2rem;">QR code expires every 30 seconds. <b>Refresh this page</b> to get a fresh one if it fails.</p>
+                    <br><br>
+                    <a href="/logs" style="padding: 10px 20px; background-color: #333; color: #0f0; text-decoration: none; border-radius: 5px; font-weight: bold;">View Bot Logs</a>
                 </body>
             </html>
         `);
