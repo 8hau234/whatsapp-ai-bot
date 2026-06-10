@@ -15,9 +15,6 @@
     "express": "^5.2.1",
     "google-auth-library": "^10.6.2",
     "google-spreadsheet": "^5.2.0",
-    "groq-sdk": "^1.2.1",
-    "qrcode": "^1.5.4",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.34.7"
+    "groq-sdk": "^1.2.1"
   }
 }

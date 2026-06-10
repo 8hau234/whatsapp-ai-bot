@@ -1,72 +1,19 @@
 require('dotenv').config();
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const express = require('express');
+const bodyParser = require('body-parser');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const Groq = require('groq-sdk');
-const express = require('express');
-const qrcodeLib = require('qrcode');
 
-// ==========================================
-// 0. Web Server (For Render QR Code & Logs)
-// ==========================================
 const app = express();
+app.use(bodyParser.json());
+
 const PORT = process.env.PORT || 3000;
 
-// Capture logs so we can display them on the web page
-const recentLogs = [];
-const originalLog = console.log;
-const originalError = console.error;
-
-console.log = function(...args) {
-    recentLogs.push('[' + new Date().toLocaleTimeString() + '] ' + args.join(' '));
-    if (recentLogs.length > 50) recentLogs.shift();
-    originalLog.apply(console, args);
-};
-
-console.error = function(...args) {
-    recentLogs.push('[' + new Date().toLocaleTimeString() + '] ❌ ERROR: ' + args.join(' '));
-    if (recentLogs.length > 50) recentLogs.shift();
-    originalError.apply(console, args);
-};
-
-let latestQrImage = null;
-let isClientReady = false;
-
-app.get('/', (req, res) => {
-    if (isClientReady) {
-        res.send(`
-            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
-                <h1 style="color:green;">✅ WhatsApp is Connected! The bot is running perfectly.</h1>
-                <br><br>
-                <a href="/logs" style="padding: 15px 30px; background-color: #333; color: #0f0; text-decoration: none; border-radius: 5px; font-size: 1.5rem; font-weight: bold;">Click Here to View Bot Logs</a>
-            </div>
-        `);
-    } else if (latestQrImage) {
-        res.send(`
-            <html>
-                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background-color:#f0f2f5;">
-                    <h2>Scan this QR Code with WhatsApp</h2>
-                    <img src="${latestQrImage}" alt="QR Code" style="width: 350px; height: 350px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 15px solid white;"/>
-                    <p style="color: #666; margin-top: 20px; font-size: 1.2rem;">QR code expires every 30 seconds. <b>Refresh this page</b> to get a fresh one if it fails.</p>
-                    <br><br>
-                    <a href="/logs" style="padding: 10px 20px; background-color: #333; color: #0f0; text-decoration: none; border-radius: 5px; font-weight: bold;">View Bot Logs</a>
-                </body>
-            </html>
-        `);
-    } else {
-        res.send('<h1 style="font-family:sans-serif; text-align:center; margin-top:50px;">⏳ Generating QR Code... Please wait and refresh in 10 seconds.</h1>');
-    }
-});
-
-// Secret debugging page!
-app.get('/logs', (req, res) => {
-    res.send('<h2>Bot Logs:</h2><pre style="background:#222; color:#0f0; padding:20px; font-size:1.2rem; border-radius:10px;">' + recentLogs.join('<br>') + '</pre>');
-});
-
-app.listen(PORT, () => {
-    console.log(`🌐 Web Server running on port ${PORT}`);
-});
+// Environment Variables
+const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || "aurel_globe_secret_123";
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
+const META_PHONE_NUMBER_ID = process.env.META_PHONE_NUMBER_ID;
 
 // Initialize Groq AI
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -96,81 +43,114 @@ async function appendToSheet(date, sender, messageContent, name, quantity, produ
         ]);
         console.log(`✅ Logged order from ${sender} to Google Sheets`);
     } catch (err) {
-        console.error('❌ Error writing to Google Sheets.');
-        console.error(err.message);
+        console.error('❌ Error writing to Google Sheets:', err.message);
     }
 }
 
 // ==========================================
-// 2. WhatsApp Client Configuration
+// 2. Meta WhatsApp API Helper
 // ==========================================
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--disable-gpu'
-        ]
+async function sendWhatsAppMessage(recipientPhone, textMessage) {
+    if (!META_ACCESS_TOKEN || !META_PHONE_NUMBER_ID) {
+        console.error("❌ Missing Meta API Tokens in Environment Variables!");
+        return;
     }
-});
 
-client.on('qr', async (qr) => {
-    console.log('📱 QR Code Generated! Go to your Render Web Service URL to see the image!');
-    qrcode.generate(qr, { small: true }); // Fallback for terminal
+    const url = `https://graph.facebook.com/v19.0/${META_PHONE_NUMBER_ID}/messages`;
     
-    // Generate image for the website
     try {
-        latestQrImage = await qrcodeLib.toDataURL(qr);
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                messaging_product: "whatsapp",
+                to: recipientPhone,
+                type: "text",
+                text: { body: textMessage }
+            })
+        });
+        
+        const responseData = await response.json();
+        if (responseData.error) {
+            console.error("❌ Meta API Error:", responseData.error.message);
+        } else {
+            console.log(`✅ Message sent successfully to ${recipientPhone}`);
+        }
     } catch (err) {
-        console.error('❌ Failed to generate QR image for web:', err);
+        console.error("❌ Failed to send message:", err.message);
     }
-});
-
-client.on('ready', () => {
-    isClientReady = true;
-    latestQrImage = null; // Clear image from memory
-    console.log('✅ WhatsApp Client is ready and listening for messages!');
-});
+}
 
 // ==========================================
 // 3. Conversational Memory Storage
 // ==========================================
 const chatSessions = {};
 
-client.on('message', async msg => {
-    // Ignore messages that are older than 5 minutes.
-    // This prevents the bot from reading deep history, but doesn't rely on the buggy 'ready' event!
-    const messageAge = (Date.now() / 1000) - msg.timestamp;
-    if (messageAge > 300) return;
+// ==========================================
+// 4. Webhook Endpoints
+// ==========================================
 
-    const contact = await msg.getContact();
-    const sender = contact.number; 
-    const senderName = contact.pushname || contact.name || sender;
-    const date = new Date(msg.timestamp * 1000).toLocaleString();
-    const text = msg.body;
+// Webhook Verification (Required by Meta)
+app.get('/webhook', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
 
-    console.log(`📨 Received message from ${senderName}: ${text}`);
-
-    if (!text) return;
-
-    if (!chatSessions[sender]) {
-        chatSessions[sender] = [];
+    if (mode && token) {
+        if (mode === 'subscribe' && token === META_VERIFY_TOKEN) {
+            console.log('✅ WEBHOOK VERIFIED BY META');
+            res.status(200).send(challenge);
+        } else {
+            res.sendStatus(403);
+        }
+    } else {
+        res.status(400).send('Invalid verification request');
     }
+});
 
-    chatSessions[sender].push({ role: 'user', content: text });
+// Receiving Messages from Meta
+app.post('/webhook', async (req, res) => {
+    // 1. Send 200 OK immediately to prevent Meta from retrying the webhook
+    res.sendStatus(200);
 
-    if (chatSessions[sender].length > 10) {
-        chatSessions[sender] = chatSessions[sender].slice(-10);
-    }
+    const body = req.body;
 
-    try {
-        console.log(`   -> Asking Groq AI to analyze the conversation...`);
+    // Make sure this is a WhatsApp status update
+    if (body.object !== "whatsapp_business_account") return;
+
+    // Parse the message structure
+    if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
+        const webhookEvent = body.entry[0].changes[0].value;
+        const message = webhookEvent.messages[0];
         
-        const systemPrompt = `
+        // We only care about text messages for now
+        if (message.type !== "text") return;
+
+        const senderPhone = message.from; // Phone number of the user
+        const senderName = webhookEvent.contacts ? webhookEvent.contacts[0].profile.name : senderPhone;
+        const text = message.text.body;
+        const date = new Date(message.timestamp * 1000).toLocaleString();
+
+        console.log(`📨 Received message from ${senderName}: ${text}`);
+
+        // Handle memory
+        if (!chatSessions[senderPhone]) {
+            chatSessions[senderPhone] = [];
+        }
+
+        chatSessions[senderPhone].push({ role: 'user', content: text });
+
+        if (chatSessions[senderPhone].length > 10) {
+            chatSessions[senderPhone] = chatSessions[senderPhone].slice(-10);
+        }
+
+        try {
+            console.log(`   -> Asking Groq AI to analyze the conversation...`);
+            
+            const systemPrompt = `
 You are a helpful order-taking assistant on WhatsApp. Your goal is to collect 3 pieces of information:
 1. Customer's Name
 2. Product Name
@@ -188,39 +168,49 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
 {"status": "complete", "name": "extracted_name", "quantity": "extracted_quantity", "product": "extracted_product", "reply": "Awesome, your order is confirmed!"}
 `;
 
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            ...chatSessions[sender]
-        ];
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                ...chatSessions[senderPhone]
+            ];
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: messages,
-            model: 'llama-3.1-8b-instant',
-            temperature: 0.2,
-            response_format: { type: "json_object" } 
-        });
+            const chatCompletion = await groq.chat.completions.create({
+                messages: messages,
+                model: 'llama-3.1-8b-instant',
+                temperature: 0.2,
+                response_format: { type: "json_object" } 
+            });
 
-        const responseText = chatCompletion.choices[0]?.message?.content || '{}';
-        const data = JSON.parse(responseText);
+            const responseText = chatCompletion.choices[0]?.message?.content || '{}';
+            const data = JSON.parse(responseText);
 
-        console.log(`   -> Groq Status: ${data.status}`);
+            console.log(`   -> Groq Status: ${data.status}`);
 
-        if (data.status === 'asking') {
-            await msg.reply(data.reply);
-            chatSessions[sender].push({ role: 'assistant', content: data.reply });
-            console.log(`   -> Sent follow-up question to ${senderName}`);
+            if (data.status === 'asking') {
+                // Reply to the user and save the assistant's reply to memory
+                await sendWhatsAppMessage(senderPhone, data.reply);
+                chatSessions[senderPhone].push({ role: 'assistant', content: data.reply });
 
-        } else if (data.status === 'complete') {
-            await appendToSheet(date, senderName, text, data.name, data.quantity, data.product);
-            await msg.reply(`✅ ${data.reply}`);
-            console.log(`   -> Sent confirmation and cleared memory for ${senderName}`);
-            delete chatSessions[sender];
+            } else if (data.status === 'complete') {
+                // We have all details! Log to Sheets and reply.
+                await appendToSheet(date, senderName, text, data.name, data.quantity, data.product);
+                await sendWhatsAppMessage(senderPhone, `✅ ${data.reply}`);
+                
+                // Clear memory so they can start a fresh order later
+                delete chatSessions[senderPhone];
+            }
+
+        } catch (err) {
+            console.error('   -> Groq AI Error:', err.message);
+            await sendWhatsAppMessage(senderPhone, `⚠️ Oops! The AI encountered an error: ${err.message}\n\nPlease show this error to your developer!`);
         }
-
-    } catch (err) {
-        console.error('   -> Groq AI Error:', err.message);
-        await msg.reply(`⚠️ Oops! The AI encountered an error: ${err.message}\n\nPlease show this error to your developer!`);
     }
 });
 
-client.initialize();
+// A simple landing page
+app.get('/', (req, res) => {
+    res.send('<h1 style="font-family:sans-serif; text-align:center; margin-top:50px; color:green;">✅ Webhook Server is running perfectly!</h1><p style="text-align:center;">This bot is now connected to the Official Meta API.</p>');
+});
+
+app.listen(PORT, () => {
+    console.log(`🌐 Webhook Server running on port ${PORT}`);
+});
