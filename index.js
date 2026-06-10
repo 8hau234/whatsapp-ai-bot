@@ -45,7 +45,7 @@ const serviceAccountAuth = new JWT({
 
 const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, serviceAccountAuth);
 
-async function appendToSheet(date, sender, messageContent, name, quantity, product) {
+async function appendToSheet(date, sender, messageContent, name, businessType, problem) {
     try {
         await doc.loadInfo(); 
         const sheet = doc.sheetsByIndex[0];
@@ -54,10 +54,10 @@ async function appendToSheet(date, sender, messageContent, name, quantity, produ
             date,
             sender,
             name || '',
-            quantity || '',
-            product || ''
+            businessType || '',
+            problem || ''
         ]);
-        console.log(`✅ Logged order from ${sender} to Google Sheets`);
+        console.log(`✅ Logged lead from ${sender} to Google Sheets`);
     } catch (err) {
         console.error('❌ Error writing to Google Sheets:', err.message);
     }
@@ -167,21 +167,23 @@ app.post('/webhook', async (req, res) => {
             console.log(`   -> Asking Groq AI to analyze the conversation...`);
             
             const systemPrompt = `
-You are a helpful order-taking assistant on WhatsApp. Your goal is to collect 3 pieces of information:
+You are an expert AI Automation Consultant for an automation agency. Your goal is to qualify leads by collecting 3 pieces of information naturally:
 1. Customer's Name
-2. Product Name
-3. Quantity
+2. Their Business Type / Industry
+3. The biggest problem they want to automate (e.g., customer service, data entry, lead generation)
 
 Follow these strict rules:
-- Keep your replies short, friendly, and conversational.
-- If you are missing any of the 3 required details, ask the user for them naturally.
+- Be highly professional, persuasive, and consultative.
+- Keep replies short and conversational.
+- If you are missing any of the 3 required details, ask the user for them naturally. DO NOT ask for everything at once.
+- Be smart about extracting data. If they say "I run a dentist office and need help with booking", immediately extract "Dentist" and "Appointment booking".
 - Output ONLY a valid JSON object. Do not include markdown formatting or extra text.
 
 JSON FORMAT WHEN ASKING FOR MISSING DETAILS:
 {"status": "asking", "reply": "Your conversational reply here"}
 
 JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
-{"status": "complete", "name": "extracted_name", "quantity": "extracted_quantity", "product": "extracted_product", "reply": "Awesome, your order is confirmed!"}
+{"status": "complete", "name": "extracted_name", "business_type": "extracted_business", "problem": "extracted_problem", "reply": "Fantastic! I've logged your requirements. One of our automation experts will review this and reach out shortly to discuss a custom solution!"}
 `;
 
             const messages = [
@@ -208,10 +210,10 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
 
             } else if (data.status === 'complete') {
                 // We have all details! Log to Sheets and reply.
-                await appendToSheet(date, senderName, text, data.name, data.quantity, data.product);
+                await appendToSheet(date, senderName, text, data.name, data.business_type, data.problem);
                 await sendWhatsAppMessage(senderPhone, `✅ ${data.reply}`);
                 
-                // Clear memory so they can start a fresh order later
+                // Clear memory so they can start a fresh conversation later
                 delete chatSessions[senderPhone];
             }
 
