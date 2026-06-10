@@ -8,6 +8,22 @@ const Groq = require('groq-sdk');
 const app = express();
 app.use(bodyParser.json());
 
+const recentLogs = [];
+const originalLog = console.log;
+const originalError = console.error;
+
+console.log = function(...args) {
+    recentLogs.push('[' + new Date().toLocaleTimeString() + '] ' + args.join(' '));
+    if (recentLogs.length > 50) recentLogs.shift();
+    originalLog.apply(console, args);
+};
+
+console.error = function(...args) {
+    recentLogs.push('[' + new Date().toLocaleTimeString() + '] ❌ ERROR: ' + args.join(' '));
+    if (recentLogs.length > 50) recentLogs.shift();
+    originalError.apply(console, args);
+};
+
 const PORT = process.env.PORT || 3000;
 
 // Environment Variables
@@ -209,6 +225,10 @@ JSON FORMAT WHEN ALL 3 DETAILS ARE COLLECTED:
 // A simple landing page
 app.get('/', (req, res) => {
     res.send('<h1 style="font-family:sans-serif; text-align:center; margin-top:50px; color:green;">✅ Webhook Server is running perfectly!</h1><p style="text-align:center;">This bot is now connected to the Official Meta API.</p>');
+});
+
+app.get('/logs', (req, res) => {
+    res.send('<h2>Bot Logs:</h2><pre style="background:#222; color:#0f0; padding:20px; font-size:1.2rem; border-radius:10px;">' + recentLogs.join('<br>') + '</pre>');
 });
 
 app.listen(PORT, () => {
